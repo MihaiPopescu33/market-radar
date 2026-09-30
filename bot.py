@@ -100,12 +100,13 @@ def s_liquidity_sweep(d):
     return first_l.astype(int) - first_s.astype(int)
 
 
-SETUPS = {
+ALL_SETUPS = {
     "trend_pullback": (s_trend_pullback, "Pullback în trend (atinge EMA20, EMA50 vs EMA200 dă direcția)"),
     "breakout": (s_breakout, "Breakout din range-ul ultimelor 20 de bare, cu lumânare puternică"),
     "bb_rsi_reversal": (s_bb_rsi_reversal, "Revenire din extremă (în afara Bollinger + RSI 30/70)"),
     "liquidity_sweep": (s_liquidity_sweep, "Sweep peste/sub extrema zilei anterioare, închidere înapoi"),
 }
+SETUPS = {k: v for k, v in ALL_SETUPS.items() if k in C.ENABLED_SETUPS}
 
 
 # ──────────────────── simulare rezultat & statistici ────────────────────
@@ -287,6 +288,9 @@ def scan(now: datetime | None = None):
     now = now or datetime.now(timezone.utc)
     st = load_state()
     journal = load_journal()
+    for row in journal:
+        if row["status"] == "open" and (row["tf"] not in C.TIMEFRAMES or row["setup"] not in SETUPS):
+            row["status"] = "expired"
     sent = 0
     for name, ticker in C.INSTRUMENTS.items():
         frames = {}
@@ -355,7 +359,7 @@ def format_alert(name, tf, setup, desc, direction, last, bar_close, risk, sl, tp
     local = bar_close.tz_convert(_tz()).strftime("%d.%m %H:%M")
     agree = (h1_trend == "bullish" and direction == 1) or (h1_trend == "bearish" and direction == -1)
     lines = [
-        f"<b>{side} {name}</b> ({tf_label}) — {setup.replace('_', ' ')}",
+        f"<b>{side} {name}</b> ({tf_label}) — {setup.replace('_', ' ')} · {C.BOT_NAME}",
         f"<i>{desc}</i>",
         "",
         f"Preț la semnal: <b>{fmt_price(last.Close)}</b> (bară închisă {local})",
@@ -429,7 +433,7 @@ def report():
             f.write(f"| {x.instrument} | {x.tf} | {x.setup} | {x.dir} | {x.n} | {pct(x.win)} | "
                     f"{r_(x.exp)} | {x.pf:.2f} | {'da' if x.stable else 'nu'} |\n")
     good = df[(df.n >= C.MIN_SAMPLES) & (df.exp > 0) & df.stable]
-    msg = [f"<b>📈 Raport săptămânal Market Radar</b>",
+    msg = [f"<b>📈 Raport săptămânal · {C.BOT_NAME}</b>",
            f"Combinații testate: {len(df)} · cu edge stabil (≥{C.MIN_SAMPLES} cazuri): <b>{len(good)}</b>", ""]
     msg.append("<b>Top setup-uri:</b>")
     for _, x in good.head(10).iterrows():
@@ -453,6 +457,6 @@ if __name__ == "__main__":
     elif cmd == "report":
         report()
     elif cmd == "test":
-        send("✅ Market Radar e conectat\nDe acum primești aici alertele.")
+        send(f"✅ {C.BOT_NAME} e conectat\nSetup-uri: {', '.join(SETUPS)} · TF: {', '.join(C.TIMEFRAMES)} · SL {C.SL_ATR}×ATR · TP {C.TP_R:g}R")
     else:
         print(__doc__)
